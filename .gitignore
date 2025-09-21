@@ -62,3 +62,6 @@ fastlane/screenshots/**/*.png
 fastlane/test_output
 .DS_Store
 VideoFeed.xcodeproj/xcuserdata/sky.xcuserdatad/xcdebugger/Breakpoints_v2.xcbkptlist
+*.xcuserstate
+*.xcbkptlist
+*.xcuserstate
