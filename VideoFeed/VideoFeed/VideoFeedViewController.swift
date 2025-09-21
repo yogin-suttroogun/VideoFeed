@@ -9,17 +9,28 @@ import UIKit
 import Combine
 
 /**
- A view controller that displays a vertical scrolling feed of videos similar to TikTok or Instagram Reels.
+ A view controller that displays a vertical scrolling feed of videos with message input functionality.
  
- The `VideoFeedViewController` manages a full-screen table view where each cell contains a video player.
- It coordinates with `VideoFeedViewModel` to handle video loading, playback, and prefetching.
+ The `VideoFeedViewController` manages a full-screen table view where each cell contains a video player,
+ enhanced with a sophisticated message input system that allows users to send messages and reactions
+ while maintaining smooth video playback performance.
  
  ## Key Features
  - Full-screen vertical scrolling video feed
  - Automatic video playback and pausing based on visibility
+ - Integrated message input with reaction buttons
+ - Keyboard-aware layout adjustments
+ - Scroll disabling during text input
  - Loading, error, and empty state handling
  - Background/foreground lifecycle management
  - Memory-efficient video player reuse
+ 
+ ## Message Input Integration
+ - Text input bar with heart and share reaction buttons
+ - Focus-aware UI that disables video scrolling during typing
+ - Keyboard-aware layout that keeps input visible
+ - Send button that appears when typing
+ - Smooth animations between input states
  
  ## Usage
  ```swift
@@ -39,11 +50,15 @@ final class VideoFeedViewController: UIViewController {
     
     /// Set of Combine cancellables for managing subscriptions
     private var cancellables = Set<AnyCancellable>()
+    /// Bottom constraint for the message input view (keyboard-aware)
+    internal var messageInputBottomConstraint: NSLayoutConstraint!
+    /// Original table view bottom constraint (for keyboard adjustments)
+    private var tableViewBottomConstraint: NSLayoutConstraint!
     
     // MARK: - UI Components
     
     /// Main table view that displays video cells in a paginated, full-screen format
-    private lazy var tableView: UITableView = {
+    internal lazy var tableView: UITableView = {
         let tableView = UITableView(frame: .zero, style: .plain)
         tableView.delegate = self
         tableView.dataSource = self
@@ -69,6 +84,13 @@ final class VideoFeedViewController: UIViewController {
         errorView.isHidden = true
         errorView.translatesAutoresizingMaskIntoConstraints = false
         return errorView
+    }()
+    
+    /// Message input view with reaction buttons
+    internal lazy var messageInputView: MessageInputView = {
+        let inputView = MessageInputView()
+        inputView.translatesAutoresizingMaskIntoConstraints = false
+        return inputView
     }()
     
     // MARK: - Initialization
@@ -103,17 +125,21 @@ final class VideoFeedViewController: UIViewController {
     }
     
     // MARK: - Lifecycle
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         setupUI()
         bindViewModel()
+        bindMessageInput()
         viewModel.loadVideos()
         setupNotifications()
+        setupKeyboardDismissOnTap()
     }
     
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         viewModel.pauseAllPlayers()
+        messageInputView.setFocused(false, animated: false)
     }
     
     override func viewDidDisappear(_ animated: Bool) {
@@ -128,15 +154,16 @@ final class VideoFeedViewController: UIViewController {
     /**
      Configures the user interface layout and adds subviews.
      
-     Sets up the main table view, loading view, and error view with proper constraints.
-     Also configures the error view's retry action.
+     Sets up the main table view, loading view, error view, and message input view
+     with proper constraints and keyboard-aware positioning.
      */
     private func setupUI() {
-        view.backgroundColor = .white
+        view.backgroundColor = .black
         
         view.addSubview(tableView)
         view.addSubview(loadingView)
         view.addSubview(errorView)
+        view.addSubview(messageInputView)
         
         setupConstraints()
         setupErrorViewAction()
@@ -144,25 +171,44 @@ final class VideoFeedViewController: UIViewController {
     
     /**
      Establishes Auto Layout constraints for all UI components.
-
-     Ensures that the table view, loading view, and error view all fill the entire screen.
+     
+     Ensures proper layout with keyboard-aware positioning for the message input view
+     and maintains full-screen video display while accommodating the input interface.
      */
     private func setupConstraints() {
+        // Table view constraints (adjusted to leave space for message input)
+        tableViewBottomConstraint = tableView.bottomAnchor.constraint(equalTo: messageInputView.topAnchor, constant: -8)
+        
         NSLayoutConstraint.activate([
             tableView.topAnchor.constraint(equalTo: view.topAnchor),
             tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            
+            tableViewBottomConstraint
+        ])
+        
+        // Loading view constraints
+        NSLayoutConstraint.activate([
             loadingView.topAnchor.constraint(equalTo: view.topAnchor),
             loadingView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             loadingView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            loadingView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            
+            loadingView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        ])
+        
+        // Error view constraints
+        NSLayoutConstraint.activate([
             errorView.topAnchor.constraint(equalTo: view.topAnchor),
             errorView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             errorView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             errorView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        ])
+        
+        // Message input view constraints (keyboard-aware)
+        messageInputBottomConstraint = messageInputView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -16)
+        
+        NSLayoutConstraint.activate([
+            messageInputView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+            messageInputView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+            messageInputBottomConstraint
         ])
     }
     
@@ -186,6 +232,7 @@ final class VideoFeedViewController: UIViewController {
      - Update UI based on loading state changes
      - Reload table view when video items change
      - Monitor prefetch strategy changes (for debugging/analytics)
+     - Handle network connectivity changes
      */
     private func bindViewModel() {
         // Bind loading state
@@ -216,10 +263,52 @@ final class VideoFeedViewController: UIViewController {
         // Bind network changes
         viewModel.connectionType
             .receive(on: DispatchQueue.main)
-            .sink { connectionType in
+            .sink { [weak self] connectionType in
                 if connectionType == .unknown {
-                    self.showErrorState(with: .noInternetConnection)
+                    self?.showErrorState(with: .noInternetConnection)
                 }
+            }
+            .store(in: &cancellables)
+    }
+    
+    /**
+     Establishes reactive bindings for the message input view.
+     
+     Handles focus changes, message sending, and reaction button interactions
+     while managing video feed scrolling behavior during text input.
+     */
+    private func bindMessageInput() {
+        // Handle focus changes
+        messageInputView.focusStatePublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] isFocused in
+                // Update table view scroll state
+                self?.tableView.isScrollEnabled = !isFocused
+                self?.viewModel.handleInputFocusChange(isFocused)
+            }
+            .store(in: &cancellables)
+        
+        // Handle message sending
+        messageInputView.messageSentPublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] message in
+                self?.handleMessageSent(message)
+            }
+            .store(in: &cancellables)
+        
+        // Handle heart reaction
+        messageInputView.heartTappedPublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.handleHeartReaction()
+            }
+            .store(in: &cancellables)
+        
+        // Handle share reaction
+        messageInputView.shareTappedPublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.handleShareReaction()
             }
             .store(in: &cancellables)
     }
@@ -231,7 +320,7 @@ final class VideoFeedViewController: UIViewController {
      
      - Parameter state: The current state of the video feed (loading, loaded, error, empty).
      
-     Manages visibility of loading, error, and table view based on the provided state.
+     Manages visibility of loading, error, table view, and message input based on the provided state.
      */
     private func updateUI(for state: VideoFeedState) {
         switch state {
@@ -247,24 +336,27 @@ final class VideoFeedViewController: UIViewController {
     private func showVideoFeed(_ isShown: Bool) {
         loadingView.isHidden = isShown
         tableView.isHidden = !isShown
+        messageInputView.isHidden = !isShown
         errorView.isHidden = true
     }
     
     private func showErrorState(with error: ErrorHandler) {
         loadingView.isHidden = true
         tableView.isHidden = true
+        messageInputView.isHidden = true
         errorView.isHidden = false
         errorView.configure(with: error)
     }
     
-    // MARK: - Notification observers for life cycle
-        
+    // MARK: - Notification observers for lifecycle and keyboard
+    
     /**
-     Configures notification observers for app lifecycle events.
+     Configures notification observers for app lifecycle events and keyboard changes.
      
      Monitors for:
-     - App entering background: Pauses video playback
+     - App entering background: Pauses video playback and dismisses keyboard
      - App entering foreground: Resumes video playback
+     - Keyboard show/hide: Adjusts layout to keep message input visible
      
      Uses Combine publishers for reactive notification handling.
      */
@@ -272,12 +364,28 @@ final class VideoFeedViewController: UIViewController {
         NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)
             .sink { [weak self] _ in
                 self?.viewModel.appDidEnterBackground()
+                self?.messageInputView.setFocused(false, animated: false)
             }
             .store(in: &cancellables)
         
         NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)
             .sink { [weak self] _ in
                 self?.viewModel.appWillEnterForeground()
+            }
+            .store(in: &cancellables)
+        
+        // Keyboard notifications
+        NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)
+            .compactMap { $0.userInfo }
+            .sink { [weak self] userInfo in
+                self?.keyboardWillShow(userInfo: userInfo)
+            }
+            .store(in: &cancellables)
+        
+        NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)
+            .compactMap { $0.userInfo }
+            .sink { [weak self] userInfo in
+                self?.keyboardWillHide(userInfo: userInfo)
             }
             .store(in: &cancellables)
     }

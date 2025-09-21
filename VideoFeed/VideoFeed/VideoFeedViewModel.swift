@@ -79,6 +79,8 @@ final class VideoFeedViewModel {
     private var cancellables = Set<AnyCancellable>()
     /// Publisher for tracking scroll state to optimize playback
     private let scrollingSubject = CurrentValueSubject<Bool, Never>(false)
+    /// Keep track of when message input view is focused
+    private var isFocused: Bool = false
     
     // MARK: - Computed Properties
     
@@ -174,7 +176,12 @@ final class VideoFeedViewModel {
         playerPool.playerReadinessPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] index in
-                self?.playerPool.playPlayer(for: index)
+                if self?.loadingState.value == .loaded && !(self?.isFocused ?? false) {
+                    self?.playerPool.playPlayer(for: index)
+                } else {
+                    self?.playerPool.pauseAllPlayers()
+                }
+                
             }
             .store(in: &cancellables)
     }
@@ -279,5 +286,34 @@ final class VideoFeedViewModel {
     func appWillEnterForeground() {
         let index = currentVideoIndex.value
         updatePlayback(for: index)
+    }
+    
+    // MARK: - Message Input Focus
+    
+    /**
+     Handles focus changes in the message input view.
+     
+     - Parameter isFocused: Whether the input view is currently focused.
+     
+     When focused:
+     - Disables table view scrolling
+     - Pauses video playback to avoid conflicts
+     - Updates scroll state in view model
+     
+     When unfocused:
+     - Re-enables table view scrolling
+     - Resumes normal video feed behavior
+     */
+    func handleInputFocusChange(_ isFocused: Bool) {
+        self.isFocused = isFocused
+        if isFocused {
+            // Pause current video when starting to type
+            pauseAllPlayers()
+            setScrolling(true) // Inform view model that scrolling is disabled
+        } else {
+            // Resume normal video behavior when done typing
+            setScrolling(false)
+            // Allow the view model to resume playback naturally
+        }
     }
 }

@@ -66,7 +66,7 @@ final class ErrorView: UIView {
     
     /// Retry button for error recovery actions
     private lazy var retryButton: UIButton = {
-        let button = UIButton(type: .system)
+        let button = UIButton()
         button.setTitle("Try Again", for: .normal)
         button.setTitleColor(.white, for: .normal)
         button.titleLabel?.font = UIFont.systemFont(ofSize: 16, weight: .semibold)
