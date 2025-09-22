@@ -39,6 +39,7 @@ extension VideoFeedViewController: UIScrollViewDelegate {
      Notifies the view model that scrolling has started to optimize playback behavior.
      */
     func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+        messageInputView.clearText()
         viewModel.setScrolling(true)
     }
     
