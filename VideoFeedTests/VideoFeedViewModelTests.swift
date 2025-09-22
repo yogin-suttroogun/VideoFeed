@@ -58,6 +58,7 @@ final class VideoFeedViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.prefetchStrategy.value, .conservative)
         XCTAssertEqual(viewModel.connectionType.value, .cellular)
         XCTAssertFalse(viewModel.isScrolling)
+        XCTAssertFalse(viewModel.isInputFocused)
     }
     
     // MARK: - Load Videos Tests
@@ -247,6 +248,180 @@ final class VideoFeedViewModelTests: XCTestCase {
         XCTAssertTrue(mockPlayerPool.playPlayerCalled)
     }
     
+    // MARK: - Input Focus State Tests
+    
+    func testSetInputFocused() {
+        // Given
+        let focusExpectation = expectation(description: "Input focus state updated")
+        
+        // When
+        viewModel.inputFocusedSubject
+            .dropFirst() // Skip initial value
+            .sink { isFocused in
+                if isFocused {
+                    focusExpectation.fulfill()
+                }
+            }
+            .store(in: &cancellables)
+        
+        viewModel.setInputFocused(true)
+        
+        // Then
+        waitForExpectations(timeout: 1.0)
+        XCTAssertTrue(viewModel.isInputFocused)
+        XCTAssertTrue(mockPlayerPool.pauseAllPlayersCalled)
+        
+        // Test setting back to false
+        viewModel.setInputFocused(false)
+        XCTAssertFalse(viewModel.isInputFocused)
+    }
+    
+    func testInputFocusedPreventsPlayback() {
+        // Given
+        viewModel.setInputFocused(true)
+        mockPlayerPool.mockPlayerReady = true
+        
+        // When - simulate input unfocused and index changes
+        viewModel.setInputFocused(false)
+        viewModel.updateCurrentVideoIndex(1)
+        
+        // Give time for debounced playback update
+        let playbackExpectation = expectation(description: "Playback updated after input unfocused")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            playbackExpectation.fulfill()
+        }
+        
+        waitForExpectations(timeout: 1.0)
+        
+        // Then
+        XCTAssertTrue(mockPlayerPool.playPlayerCalled)
+    }
+    
+    func testInputFocusedWhileScrollingPreventsPlayback() {
+        // Given
+        viewModel.setScrolling(true)
+        viewModel.setInputFocused(true)
+        mockPlayerPool.mockPlayerReady = true
+        
+        // When - simulate both scrolling and input focus stopping
+        viewModel.setScrolling(false)
+        viewModel.setInputFocused(false)
+        viewModel.updateCurrentVideoIndex(1)
+        
+        // Give time for debounced playback update
+        let playbackExpectation = expectation(description: "Playback updated after both states clear")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            playbackExpectation.fulfill()
+        }
+        
+        waitForExpectations(timeout: 1.0)
+        
+        // Then
+        XCTAssertTrue(mockPlayerPool.playPlayerCalled)
+    }
+    
+    // MARK: - Message Input Handling Tests
+    
+    func testHandleMessageSent() {
+        // Given
+        let testMessage = "Test message"
+        let feedbackExpectation = expectation(description: "Temporary feedback published")
+        
+        // When
+        viewModel.temporaryFeedbackPublisher
+            .sink { message in
+                if message == "Message sent!" {
+                    feedbackExpectation.fulfill()
+                }
+            }
+            .store(in: &cancellables)
+        
+        viewModel.handleMessageSent(testMessage)
+        
+        // Then
+        waitForExpectations(timeout: 1.0)
+    }
+    
+    func testHandleHeartReaction() {
+        // Given
+        let heartExpectation = expectation(description: "Heart reaction feedback published")
+        
+        // When
+        viewModel.temporaryFeedbackPublisher
+            .sink { message in
+                if message == "♥️" {
+                    heartExpectation.fulfill()
+                }
+            }
+            .store(in: &cancellables)
+        
+        viewModel.handleHeartReaction()
+        
+        // Then
+        waitForExpectations(timeout: 1.0)
+    }
+    
+    func testHandleShareReaction() {
+        // Given
+        let currentIndex = 3
+        viewModel.updateCurrentVideoIndex(currentIndex)
+        let shareExpectation = expectation(description: "Share options presentation published")
+        
+        // When
+        viewModel.shareOptionsPresentationPublisher
+            .sink { videoIndex in
+                if videoIndex == currentIndex {
+                    shareExpectation.fulfill()
+                }
+            }
+            .store(in: &cancellables)
+        
+        viewModel.handleShareReaction()
+        
+        // Then
+        waitForExpectations(timeout: 1.0)
+    }
+    
+    // MARK: - Keyboard Info Tests
+    
+    func testKeyboardInfoInitialState() {
+        // Given & When - initialization happens in setup
+        
+        // Then
+        let keyboardInfo = viewModel.keyboardInfo.value
+        XCTAssertFalse(keyboardInfo.isVisible)
+        XCTAssertEqual(keyboardInfo.height, 0)
+        XCTAssertEqual(keyboardInfo.animationDuration, 0.25)
+    }
+    
+    func testKeyboardInfoUpdates() {
+        // Given
+        let testKeyboardInfo = KeyboardInfo(
+            isVisible: true,
+            height: 300,
+            animationDuration: 0.5,
+            animationOptions: .curveEaseInOut
+        )
+        let keyboardExpectation = expectation(description: "Keyboard info updated")
+        
+        // When
+        viewModel.keyboardInfo
+            .dropFirst() // Skip initial value
+            .sink { keyboardInfo in
+                if keyboardInfo.isVisible && keyboardInfo.height == 300 {
+                    keyboardExpectation.fulfill()
+                }
+            }
+            .store(in: &cancellables)
+        
+        viewModel.keyboardInfo.send(testKeyboardInfo)
+        
+        // Then
+        waitForExpectations(timeout: 1.0)
+        XCTAssertTrue(viewModel.keyboardInfo.value.isVisible)
+        XCTAssertEqual(viewModel.keyboardInfo.value.height, 300)
+    }
+    
     // MARK: - Player Management Tests
     
     func testGetPlayer_ValidIndex() {
@@ -375,6 +550,7 @@ final class VideoFeedViewModelTests: XCTestCase {
     func testPlayerReadinessTriggersPlayback() {
         // Given
         let readyIndex = 1
+        viewModel.loadingState.send(.loaded) // Ensure loaded state
         let playbackExpectation = expectation(description: "Playback triggered on ready")
         
         // When - simulate player ready signal
@@ -391,6 +567,32 @@ final class VideoFeedViewModelTests: XCTestCase {
         XCTAssertEqual(mockPlayerPool.lastPlayedIndex, readyIndex)
     }
     
+    func testPlayerReadinessDoesNotTriggerPlaybackWhenInputFocused() {
+        // Given
+        let readyIndex = 1
+        viewModel.loadingState.send(.loaded)
+        viewModel.setInputFocused(true) // Focus input to prevent playback
+        
+        // Reset mock state
+        mockPlayerPool.playPlayerCalled = false
+        mockPlayerPool.pauseAllPlayersCalled = false
+        
+        let pauseExpectation = expectation(description: "Playback paused when input focused")
+        
+        // When - simulate player ready signal
+        mockPlayerPool.playerReadinessPublisher.send(readyIndex)
+        
+        // Give some time for the binding to process
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            pauseExpectation.fulfill()
+        }
+        
+        // Then
+        waitForExpectations(timeout: 1.0)
+        XCTAssertFalse(mockPlayerPool.playPlayerCalled)
+        XCTAssertTrue(mockPlayerPool.pauseAllPlayersCalled)
+    }
+    
     // MARK: - App Lifecycle Tests
     
     func testAppDidEnterBackground() {
@@ -399,6 +601,7 @@ final class VideoFeedViewModelTests: XCTestCase {
         
         // Then
         XCTAssertTrue(mockPlayerPool.pauseAllPlayersCalled)
+        XCTAssertFalse(viewModel.isInputFocused)
     }
     
     func testAppWillEnterForeground() {
