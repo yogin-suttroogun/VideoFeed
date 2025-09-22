@@ -73,6 +73,8 @@ final class VideoFeedViewModel {
     let prefetchStrategy = CurrentValueSubject<PrefetchStrategy, Never>(.conservative)
     /// Publisher for connection type updates
     let connectionType = CurrentValueSubject<ConnectionType, Never>(.cellular)
+    /// Publisher for keyboard info
+    let keyboardInfo = CurrentValueSubject<KeyboardInfo, Never>(.hidden)
     
     // MARK: - Private Properties
     /// Set of Combine cancellables for managing subscriptions
@@ -80,7 +82,12 @@ final class VideoFeedViewModel {
     /// Publisher for tracking scroll state to optimize playback
     private let scrollingSubject = CurrentValueSubject<Bool, Never>(false)
     /// Keep track of when message input view is focused
-    private var isFocused: Bool = false
+    let inputFocusedSubject = CurrentValueSubject<Bool, Never>(false)
+    
+    // MARK: - Message Input Publishers
+    let temporaryFeedbackPublisher = PassthroughSubject<String, Never>()
+    let shareOptionsPresentationPublisher = PassthroughSubject<Int, Never>()
+
     
     // MARK: - Computed Properties
     
@@ -91,6 +98,11 @@ final class VideoFeedViewModel {
     /// Current array of video items
     var videos: [VideoItem] {
         videoItems.value
+    }
+    
+    /// Current focus on message input
+    var isInputFocused: Bool {
+        inputFocusedSubject.value
     }
     
     // MARK: - Initialization
@@ -158,17 +170,10 @@ final class VideoFeedViewModel {
             .store(in: &cancellables)
         
         // Auto-update playback when scrolling stops
-        Publishers.CombineLatest(scrollingSubject, currentVideoIndex)
+        Publishers.CombineLatest3(scrollingSubject, currentVideoIndex, inputFocusedSubject)
             .debounce(for: .milliseconds(200), scheduler: DispatchQueue.main)
-            .sink { [weak self] isScrolling, index in
-                guard
-                    let strongSelf = self,
-                    !isScrolling else
-                {
-                    self?.updatePlayback(for: index)
-                    return
-                }
-                strongSelf.updatePlayback(for: index)
+            .sink { [weak self] isScrolling, index, isInputFocused in
+                self?.updatePlayback(for: index, isScrolling: isScrolling, isInputFocused: isInputFocused)
             }
             .store(in: &cancellables)
         
@@ -176,10 +181,15 @@ final class VideoFeedViewModel {
         playerPool.playerReadinessPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] index in
-                if self?.loadingState.value == .loaded && !(self?.isFocused ?? false) {
-                    self?.playerPool.playPlayer(for: index)
+                guard let strongSelf = self else { return }
+                let shouldPlay = strongSelf.loadingState.value == .loaded &&
+                               !strongSelf.isInputFocused &&
+                               !strongSelf.isScrolling
+                
+                if shouldPlay {
+                    strongSelf.playerPool.playPlayer(for: index)
                 } else {
-                    self?.playerPool.pauseAllPlayers()
+                    strongSelf.playerPool.pauseAllPlayers()
                 }
                 
             }
@@ -229,6 +239,16 @@ final class VideoFeedViewModel {
         scrollingSubject.send(isScrolling)
     }
     
+    func setInputFocused(_ isFocused: Bool) {
+        inputFocusedSubject.send(isFocused)
+        
+        if isFocused {
+            pauseAllPlayers()
+        }
+    }
+    
+    // MARK: - Player Management
+    
     func getPlayer(for index: Int) -> AVPlayer? {
         guard index < videos.count,
               let url = videos[index].url else { return nil }
@@ -252,6 +272,35 @@ final class VideoFeedViewModel {
         cancellables.removeAll()
     }
     
+    // MARK: - Message Input Handling
+    
+    /**
+     Handles message sending from the input view.
+     
+     - Parameter message: The message text to send.
+     */
+    func handleMessageSent(_ message: String) {
+        temporaryFeedbackPublisher.send("Message sent!")
+    }
+    /**
+     Handles heart reaction button tap.
+     
+     Provides visual feedback and can be extended to handle like/heart
+     functionality for the current video.
+     */
+    func handleHeartReaction() {
+        temporaryFeedbackPublisher.send("♥️")
+    }
+    /**
+     Handles share reaction button tap.
+     
+     Can be extended to present sharing options or directly share
+     the current video content.
+     */
+    func handleShareReaction() {
+        shareOptionsPresentationPublisher.send(currentVideoIndex.value)
+    }
+    
     // MARK: - Private Methods
         
     /**
@@ -260,14 +309,17 @@ final class VideoFeedViewModel {
      - Parameter index: The index of the video to update playback for.
      
      This method:
-     1. Skips if currently scrolling (performance optimization)
+     1. Skips if currently scrolling (performance optimization) & message input view is focused
      2. Pauses all videos first
      3. Plays the current video if it's ready
      
      Called automatically when scrolling stops or video index changes.
      */
-    private func updatePlayback(for index: Int) {
-        guard !isScrolling else { return }
+    private func updatePlayback(for index: Int, isScrolling: Bool, isInputFocused: Bool) {
+        guard !isScrolling && !isInputFocused else {
+            pauseAllPlayers()
+            return
+        }
         
         // Pause all videos first
         playerPool.pauseAllPlayers()
@@ -281,39 +333,11 @@ final class VideoFeedViewModel {
     // MARK: - Life cycle
     func appDidEnterBackground() {
         playerPool.pauseAllPlayers()
+        setInputFocused(false)
     }
 
     func appWillEnterForeground() {
         let index = currentVideoIndex.value
-        updatePlayback(for: index)
-    }
-    
-    // MARK: - Message Input Focus
-    
-    /**
-     Handles focus changes in the message input view.
-     
-     - Parameter isFocused: Whether the input view is currently focused.
-     
-     When focused:
-     - Disables table view scrolling
-     - Pauses video playback to avoid conflicts
-     - Updates scroll state in view model
-     
-     When unfocused:
-     - Re-enables table view scrolling
-     - Resumes normal video feed behavior
-     */
-    func handleInputFocusChange(_ isFocused: Bool) {
-        self.isFocused = isFocused
-        if isFocused {
-            // Pause current video when starting to type
-            pauseAllPlayers()
-            setScrolling(true) // Inform view model that scrolling is disabled
-        } else {
-            // Resume normal video behavior when done typing
-            setScrolling(false)
-            // Allow the view model to resume playback naturally
-        }
+        updatePlayback(for: index, isScrolling: isScrolling, isInputFocused: isInputFocused)
     }
 }

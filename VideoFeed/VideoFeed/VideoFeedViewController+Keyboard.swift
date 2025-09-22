@@ -10,9 +10,25 @@ import UIKit
 // MARK: - Keyboard Handling
 
 /**
- Extension providing keyboard functionality.
- 
- Manages the keyboard integration and its behvaior
+ Represents keyboard state and animation parameters.
+ */
+struct KeyboardInfo {
+    let isVisible: Bool
+    let height: CGFloat
+    let animationDuration: TimeInterval
+    let animationOptions: UIView.AnimationOptions
+    
+    static let hidden = KeyboardInfo(
+        isVisible: false,
+        height: 0,
+        animationDuration: 0.25,
+        animationOptions: []
+    )
+}
+
+/**
+ Adjusts the input view position when the keyboard appears or hides,
+ ensuring the message input remains accessible without covering content.
  */
 
 extension VideoFeedViewController {
@@ -23,7 +39,7 @@ extension VideoFeedViewController {
     }
     
     @objc private func handleTableViewTap() {
-        messageInputView.setFocused(false, animated: true)
+        viewModel.setInputFocused(false)
     }
     
     /**
@@ -34,28 +50,21 @@ extension VideoFeedViewController {
      Adjusts the message input view position to stay above the keyboard
      while maintaining video feed visibility in the background.
      */
-    internal func keyboardWillShow(userInfo: [AnyHashable: Any]) {
+    internal func handleKeyboardWillShow(userInfo: [AnyHashable: Any]) {
         guard let keyboardFrame = userInfo[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect,
               let duration = userInfo[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double,
               let curve = userInfo[UIResponder.keyboardAnimationCurveUserInfoKey] as? UInt else {
             return
         }
         
-        let keyboardHeight = keyboardFrame.height
-        let safeAreaBottom = view.safeAreaInsets.bottom
-        
-        // Update message input bottom constraint to sit on top of keyboard
-        messageInputBottomConstraint.constant = -(keyboardHeight - safeAreaBottom + 8)
-        
-        // Animate the layout change
-        UIView.animate(
-            withDuration: duration,
-            delay: 0,
-            options: UIView.AnimationOptions(rawValue: curve),
-            animations: {
-                self.view.layoutIfNeeded()
-            }
+        let keyboardInfo = KeyboardInfo(
+            isVisible: true,
+            height: keyboardFrame.height,
+            animationDuration: duration,
+            animationOptions: UIView.AnimationOptions(rawValue: curve)
         )
+        
+        handleKeyboardChange(keyboardInfo)
     }
     
     /**
@@ -65,20 +74,36 @@ extension VideoFeedViewController {
      
      Restores the message input view to its original position at the bottom of the screen.
      */
-    internal func keyboardWillHide(userInfo: [AnyHashable: Any]) {
+    internal func handleKeyboardWillHide(userInfo: [AnyHashable: Any]) {
         guard let duration = userInfo[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double,
               let curve = userInfo[UIResponder.keyboardAnimationCurveUserInfoKey] as? UInt else {
             return
         }
         
-        // Restore message input to bottom position
-        messageInputBottomConstraint.constant = -16
+        let keyboardInfo = KeyboardInfo(
+            isVisible: false,
+            height: 0,
+            animationDuration: duration,
+            animationOptions: UIView.AnimationOptions(rawValue: curve)
+        )
         
-        // Animate the layout change
+        handleKeyboardChange(keyboardInfo)
+    }
+    
+    internal func handleKeyboardChange(_ keyboardInfo: KeyboardInfo) {
+        let keyboardHeight = keyboardInfo.height
+        let safeAreaBottom = view.safeAreaInsets.bottom
+        
+        if keyboardInfo.isVisible {
+            messageInputBottomConstraint.constant = -(keyboardHeight - safeAreaBottom + 8)
+        } else {
+            messageInputBottomConstraint.constant = -16
+        }
+        
         UIView.animate(
-            withDuration: duration,
+            withDuration: keyboardInfo.animationDuration,
             delay: 0,
-            options: UIView.AnimationOptions(rawValue: curve),
+            options: keyboardInfo.animationOptions,
             animations: {
                 self.view.layoutIfNeeded()
             }

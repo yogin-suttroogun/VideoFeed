@@ -9,50 +9,6 @@ import UIKit
 
 extension VideoFeedViewController {
     // MARK: - Message Input Handling
-
-    /**
-     Handles message sending from the input view.
-     
-     - Parameter message: The message text to send.
-     
-     This method can be extended to integrate with a messaging service,
-     analytics tracking, or other message handling systems.
-     */
-    internal func handleMessageSent(_ message: String) {
-        // Add haptic feedback for successful send
-        let notificationFeedback = UINotificationFeedbackGenerator()
-        notificationFeedback.notificationOccurred(.success)
-        
-        print("Message sent: \(message)")
-        
-        // For now, we'll just log it and provide user feedback
-        showTemporaryFeedback("Message sent!")
-    }
-    
-    /**
-     Handles heart reaction button tap.
-     
-     Provides visual feedback and can be extended to handle like/heart
-     functionality for the current video.
-     */
-    internal func handleHeartReaction() {
-        print("Heart reaction tapped for video at index: \(viewModel.currentVideoIndex.value)")
-        showTemporaryFeedback("❤️")
-    }
-    
-    /**
-     Handles share reaction button tap.
-     
-     Can be extended to present sharing options or directly share
-     the current video content.
-     */
-    internal func handleShareReaction() {
-        let currentVideoIndex = viewModel.currentVideoIndex.value
-        print("Share reaction tapped for video at index: \(currentVideoIndex)")
-
-        presentShareOptions(for: currentVideoIndex)
-    }
-    
     /**
      Shows a temporary feedback message to the user.
      
@@ -90,6 +46,10 @@ extension VideoFeedViewController {
         } completion: { _ in
             feedbackLabel.removeFromSuperview()
         }
+        
+        // Haptic feedback
+        let notificationFeedback = UINotificationFeedbackGenerator()
+        notificationFeedback.notificationOccurred(.success)
     }
     
     /**
@@ -97,7 +57,7 @@ extension VideoFeedViewController {
      
      - Parameter videoIndex: The index of the video to share.
      */
-    private func presentShareOptions(for videoIndex: Int) {
+    internal func presentShareOptions(for videoIndex: Int) {
         let alertController = UIAlertController(
             title: "Share Video",
             message: "Choose how you'd like to share this video",

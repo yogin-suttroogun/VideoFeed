@@ -45,7 +45,7 @@ final class ErrorView: UIView {
     private lazy var titleLabel: UILabel = {
         let label = UILabel()
         label.text = ErrorHandler.somethingWentWrong.errorTitle
-        label.textColor = .black
+        label.textColor = .white
         label.font = UIFont.systemFont(ofSize: 20, weight: .semibold)
         label.textAlignment = .center
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -55,7 +55,7 @@ final class ErrorView: UIView {
     /// Detailed error description label
     private lazy var messageLabel: UILabel = {
         let label = UILabel()
-        label.textColor = .black
+        label.textColor = .white
         label.text = ErrorHandler.somethingWentWrong.errorDescription
         label.font = UIFont.systemFont(ofSize: 16)
         label.textAlignment = .center

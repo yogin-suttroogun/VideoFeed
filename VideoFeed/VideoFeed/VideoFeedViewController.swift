@@ -139,7 +139,7 @@ final class VideoFeedViewController: UIViewController {
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         viewModel.pauseAllPlayers()
-        messageInputView.setFocused(false, animated: false)
+        viewModel.setInputFocused(false)
     }
     
     override func viewDidDisappear(_ animated: Bool) {
@@ -176,7 +176,7 @@ final class VideoFeedViewController: UIViewController {
      and maintains full-screen video display while accommodating the input interface.
      */
     private func setupConstraints() {
-        // Table view constraints (adjusted to leave space for message input)
+        // Table view constraints
         tableViewBottomConstraint = tableView.bottomAnchor.constraint(equalTo: messageInputView.topAnchor, constant: -8)
         
         NSLayoutConstraint.activate([
@@ -202,7 +202,7 @@ final class VideoFeedViewController: UIViewController {
             errorView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
         
-        // Message input view constraints (keyboard-aware)
+        // Message input view constraints
         messageInputBottomConstraint = messageInputView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -16)
         
         NSLayoutConstraint.activate([
@@ -243,7 +243,7 @@ final class VideoFeedViewController: UIViewController {
             }
             .store(in: &cancellables)
         
-        // Bind video items
+        // Bind video items for table view
         viewModel.videoItems
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
@@ -269,22 +269,43 @@ final class VideoFeedViewController: UIViewController {
                 }
             }
             .store(in: &cancellables)
+        
+        // Bind message input view
+        viewModel.inputFocusedSubject
+            .sink { [weak self] isFocused in
+                self?.messageInputView.setFocused(isFocused, animated: true)
+            }
+            .store(in: &cancellables)
+        
+        // Bind keyboard info
+        viewModel.keyboardInfo
+            .sink { [weak self] keyboardInfo in
+                self?.handleKeyboardChange(keyboardInfo)
+            }
+            .store(in: &cancellables)
+        
+        // Bind temporary feedback
+        viewModel.temporaryFeedbackPublisher
+            .sink { [weak self] message in
+                self?.showTemporaryFeedback(message)
+            }
+            .store(in: &cancellables)
+        
+        // Bind share options presentation
+        viewModel.shareOptionsPresentationPublisher
+            .sink { [weak self] videoIndex in
+                self?.presentShareOptions(for: videoIndex)
+            }
+            .store(in: &cancellables)
     }
     
-    /**
-     Establishes reactive bindings for the message input view.
-     
-     Handles focus changes, message sending, and reaction button interactions
-     while managing video feed scrolling behavior during text input.
-     */
     private func bindMessageInput() {
         // Handle focus changes
         messageInputView.focusStatePublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] isFocused in
-                // Update table view scroll state
                 self?.tableView.isScrollEnabled = !isFocused
-                self?.viewModel.handleInputFocusChange(isFocused)
+                self?.viewModel.setInputFocused(isFocused)
             }
             .store(in: &cancellables)
         
@@ -292,7 +313,7 @@ final class VideoFeedViewController: UIViewController {
         messageInputView.messageSentPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] message in
-                self?.handleMessageSent(message)
+                self?.viewModel.handleMessageSent(message)
             }
             .store(in: &cancellables)
         
@@ -300,7 +321,7 @@ final class VideoFeedViewController: UIViewController {
         messageInputView.heartTappedPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
-                self?.handleHeartReaction()
+                self?.viewModel.handleHeartReaction()
             }
             .store(in: &cancellables)
         
@@ -308,7 +329,7 @@ final class VideoFeedViewController: UIViewController {
         messageInputView.shareTappedPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
-                self?.handleShareReaction()
+                self?.viewModel.handleShareReaction()
             }
             .store(in: &cancellables)
     }
@@ -364,7 +385,6 @@ final class VideoFeedViewController: UIViewController {
         NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)
             .sink { [weak self] _ in
                 self?.viewModel.appDidEnterBackground()
-                self?.messageInputView.setFocused(false, animated: false)
             }
             .store(in: &cancellables)
         
@@ -378,14 +398,14 @@ final class VideoFeedViewController: UIViewController {
         NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)
             .compactMap { $0.userInfo }
             .sink { [weak self] userInfo in
-                self?.keyboardWillShow(userInfo: userInfo)
+                self?.handleKeyboardWillShow(userInfo: userInfo)
             }
             .store(in: &cancellables)
         
         NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)
             .compactMap { $0.userInfo }
             .sink { [weak self] userInfo in
-                self?.keyboardWillHide(userInfo: userInfo)
+                self?.handleKeyboardWillHide(userInfo: userInfo)
             }
             .store(in: &cancellables)
     }

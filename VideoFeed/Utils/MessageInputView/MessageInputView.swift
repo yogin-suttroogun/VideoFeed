@@ -44,7 +44,7 @@ import Combine
 final class MessageInputView: UIView {
     
     // MARK: - Constants
-    
+    /// Constant values used throughout `MessageInputView`
     private struct Constants {
         static let maxLines = 5
         static let minHeight: CGFloat = 50
@@ -221,16 +221,11 @@ final class MessageInputView: UIView {
         setupUI()
         setupConstraints()
         setupGestureRecognizers()
-        observeKeyboardNotifications()
     }
     
     required init?(coder: NSCoder) {
         super.init(coder: coder)
         fatalError("init(coder:) has not been implemented")
-    }
-    
-    deinit {
-        NotificationCenter.default.removeObserver(self)
     }
     
     // MARK: - Setup
@@ -301,22 +296,6 @@ final class MessageInputView: UIView {
         containerView.addGestureRecognizer(tapGesture)
     }
     
-    private func observeKeyboardNotifications() {
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(keyboardWillShow(_:)),
-            name: UIResponder.keyboardWillShowNotification,
-            object: nil
-        )
-        
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(keyboardWillHide(_:)),
-            name: UIResponder.keyboardWillHideNotification,
-            object: nil
-        )
-    }
-    
     // MARK: - Actions
     
     @objc private func containerTapped() {
@@ -327,8 +306,6 @@ final class MessageInputView: UIView {
     
     @objc private func heartButtonTapped() {
         impactFeedback.impactOccurred()
-        
-        // Animate button press
         heartButton.animateTap()
         
         // Emit event through publisher
@@ -337,8 +314,6 @@ final class MessageInputView: UIView {
     
     @objc private func shareButtonTapped() {
         impactFeedback.impactOccurred()
-        
-        // Animate button press
         shareButton.animateTap()
         
         // Emit event through publisher
@@ -358,21 +333,7 @@ final class MessageInputView: UIView {
         
         // Clear text and reset state
         clearText()
-        
-        // Optionally dismiss keyboard
         setFocused(false, animated: true)
-    }
-    
-    // MARK: - Keyboard Handling
-    
-    @objc private func keyboardWillShow(_ notification: Notification) {
-        // Keyboard handling is managed by the parent view controller
-        // This method is here for potential future keyboard-specific animations
-    }
-    
-    @objc private func keyboardWillHide(_ notification: Notification) {
-        // Keyboard handling is managed by the parent view controller
-        // This method is here for potential future keyboard-specific animations
     }
     
     // MARK: - Public Methods
@@ -432,7 +393,7 @@ final class MessageInputView: UIView {
         let shouldShow = isInputFocused && hasText
         
         UIView.animate(withDuration: 0.2, delay: 0, usingSpringWithDamping: 0.8, initialSpringVelocity: 0) {
-            self.sendButton.isHidden = shouldShow ? false : true
+            self.sendButton.isHidden = !shouldShow
             self.sendButton.transform = shouldShow ? .identity : CGAffineTransform(scaleX: 0.8, y: 0.8)
         }
     }
