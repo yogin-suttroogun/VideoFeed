@@ -1,16 +1,34 @@
 # VideoFeed App
 
-A high-performance iOS video feed application that displays videos in a TikTok-style vertical scrolling interface. The app intelligently manages video playback, memory usage, and network resources while providing smooth scrolling performance.
+A high-performance iOS video feed application that displays videos in a TikTok-style vertical scrolling interface with integrated message input functionality. The app intelligently manages video playback, memory usage, and network resources while providing smooth scrolling performance and seamless user interaction capabilities.
 
 ## Features
 
 - **Infinite Vertical Scrolling**: TikTok-style video feed with smooth pagination
+- **Interactive Message Input**: Multi-line text input with reaction buttons and keyboard-aware layout
 - **Intelligent Video Prefetching**: Adaptive prefetching based on network conditions
 - **Memory-Efficient Video Player Pool**: Reuses video players to minimize memory footprint
 - **Network-Aware Performance**: Automatically adjusts video quality and prefetching based on connection type
 - **Auto-Looping Videos**: Videos automatically loop when they reach the end
+- **Focus-Aware Playback**: Videos pause during text input to prevent audio conflicts
 - **Background/Foreground Handling**: Proper video pause/resume on app lifecycle changes
+- **Keyboard Management**: Smooth keyboard animations with input positioning
 - **Error Handling**: Comprehensive error handling with user-friendly retry mechanisms
+
+## Message Input System
+
+### Interactive Components
+- **Multi-line Text Input**: Expandable text view with 5-line maximum before scrolling
+- **Reaction Buttons**: Heart and share buttons for quick interactions
+- **Dynamic Send Button**: Appears when typing with smooth animations
+- **Focus State Management**: Disables video scrolling during text input
+- **Keyboard Coordination**: Input view smoothly follows keyboard appearance/dismissal
+
+### User Experience Features
+- **Tap-to-Dismiss**: Tap anywhere on the video feed to dismiss keyboard
+- **Smooth Transitions**: Spring-animated state changes between focused/unfocused modes
+- **Visual Feedback**: Haptic feedback and temporary success messages
+- **Share Integration**: Built-in sharing options with multiple platforms
 
 ## Architecture Overview
 
@@ -25,13 +43,32 @@ A high-performance iOS video feed application that displays videos in a TikTok-s
 ### Core Components
 
 #### VideoFeedViewController
-Main view controller managing the video feed interface with table view implementation and lifecycle handling.
+Main view controller managing the video feed interface with:
+- Table view implementation for vertical scrolling
+- Message input integration and keyboard handling
+- Lifecycle management and state coordination
+- Reactive UI updates through Combine bindings
 
 #### VideoFeedViewModel
-Business logic coordinator managing video playback states, prefetching, and reactive data binding using Combine publishers.
+Business logic coordinator managing:
+- Video playback states and player coordination
+- Message input focus and interaction handling
+- Prefetching coordination and network awareness
+- Reactive data binding using Combine publishers
+- App lifecycle event handling
+
+#### MessageInputView
+Sophisticated input component featuring:
+- Multi-line text input with dynamic height adjustment
+- Heart and share reaction buttons with animations
+- Focus state management with smooth transitions
+- Publisher-based event system for reactive integration
 
 #### VideoPlayerPool
-Memory-efficient AVPlayer management with a maximum of 5 concurrent instances, automatic player assignment, and readiness monitoring.
+Memory-efficient AVPlayer management with:
+- Maximum of 5 concurrent instances
+- Automatic player assignment and readiness monitoring
+- Resource cleanup and reuse optimization
 
 #### VideoPrefetchManager
 Network-aware prefetching with three strategies:
@@ -78,6 +115,14 @@ The app implements several memory optimization techniques:
 3. **Cell Reuse**: Leverages UITableView's cell reuse mechanism for optimal memory usage
 4. **Automatic Cleanup**: Releases unused players and prefetched assets automatically
 
+### Message Input Architecture
+
+The message input system uses a reactive architecture with Combine publishers:
+
+1. **State Management**: Focus state coordinates between input view, table view scrolling, and video playback
+2. **Keyboard Handling**: Smooth animations that match system keyboard behavior
+3. **Event Publishing**: All user interactions flow through publishers for testable, reactive handling
+
 ### Network Intelligence
 
 The app adapts to network conditions automatically:
@@ -89,9 +134,10 @@ The app adapts to network conditions automatically:
 ### Performance Optimizations
 
 1. **Debounced Scroll Events**: Prevents excessive player state changes during scrolling
-2. **Asynchronous Asset Loading**: Non-blocking video asset preparation
-3. **Smart Player Assignment**: Reuses existing players when possible
-4. **Background Processing**: Network monitoring and prefetching on background queues
+2. **Focus-Aware Playback**: Automatically pauses videos during text input
+3. **Asynchronous Asset Loading**: Non-blocking video asset preparation
+4. **Smart Player Assignment**: Reuses existing players when possible
+5. **Background Processing**: Network monitoring and prefetching on background queues
 
 ## Configuration
 
@@ -137,6 +183,18 @@ var prefetchCount: Int {
 }
 ```
 
+### Message Input Customization
+
+Adjust input behavior in `MessageInputView.swift`:
+```swift
+private struct Constants {
+    static let maxLines = 5              // Maximum lines before scrolling
+    static let minHeight: CGFloat = 50   // Minimum input height
+    static let maxHeight: CGFloat = 120  // Maximum input height
+    static let animationDuration: TimeInterval = 0.3  // Animation timing
+}
+```
+
 ## Testing Strategy
 
 ### Device Testing
@@ -170,7 +228,8 @@ xcodebuild test -project VideoFeed.xcodeproj -scheme VideoFeed -destination 'pla
 
 ### Test Coverage
 
-- **Unit Tests**: Business logic, data models, and service layer
+- **Unit Tests**: Business logic, data models, service layer, and message input coordination
+- **Integration Tests**: Complete user workflows including text input and video playback
 - **Performance Testing**: Memory usage, CPU utilization, network efficiency
 - **Network Testing**: WiFi, cellular, and offline scenarios
 
@@ -187,6 +246,8 @@ VideoFeed/
 │   ├── VideoFeedViewController.swift
 │   ├── VideoFeedViewController+TableView.swift
 │   ├── VideoFeedViewController+ScrollView.swift
+│   ├── VideoFeedViewController+Keyboard.swift      # Keyboard handling
+│   ├── VideoFeedViewController+MessageInput.swift  # Message input coordination
 │   ├── VideoFeedViewModel.swift
 │   ├── VideoModel.swift
 │   └── VideoTableViewCell.swift
@@ -194,11 +255,16 @@ VideoFeed/
 │   ├── VideoService.swift
 │   ├── VideoPlayerPool.swift
 │   └── VideoPrefetchManager.swift
-├── Utils/                         # Utility classes
+├── Utils/                         # Utility classes and extensions
 │   ├── BaseNetworkClient.swift
 │   ├── ErrorHandler.swift
 │   ├── ErrorView.swift
-│   └── LoadingView.swift
+│   ├── LoadingView.swift
+│   ├── Extension/
+│   │   └── View+Extension.swift   # UI animation helpers
+│   └── MessageInputView/          # Message input components
+│       ├── MessageInputView.swift
+│       └── MessageInputView+Delegate.swift
 └── Assets.xcassets/              # Visual assets
 ```
 
@@ -222,7 +288,7 @@ VideoFeed/
 ## Dependencies
 
 Built entirely with native iOS frameworks:
-- **UIKit**: Interface components
+- **UIKit**: Interface components and animations
 - **AVFoundation**: Video playback and asset management
 - **Combine**: Reactive programming and data binding
 - **Network**: Network path monitoring
@@ -238,6 +304,8 @@ Comprehensive error management system:
 2. **Video Loading Errors**: Automatic retry with user feedback
 3. **Decoding Errors**: Robust JSON parsing with fallback strategies  
 4. **Memory Warnings**: Proactive resource cleanup
+5. **Input Validation**: Message input sanitization and length limits
+6. **Keyboard Conflicts**: Graceful handling of keyboard appearance issues
 
 ## Troubleshooting
 
@@ -253,7 +321,17 @@ Comprehensive error management system:
    - Check for memory warnings in console
    - Reduce prefetch count for lower-end devices
 
-3. **Audio session conflicts**:
+3. **Keyboard animation issues**:
+   - Verify Auto Layout constraints are properly configured
+   - Check for conflicting gesture recognizers
+   - Test on different device sizes and orientations
+
+4. **Message input not responding**:
+   - Ensure focus state bindings are properly established
+   - Check for retained subscription cycles
+   - Verify keyboard notification observers are registered
+
+5. **Audio session conflicts**:
    - Ensure proper audio session setup
    - Check for conflicts with other audio apps
    - Verify background audio permissions
@@ -267,10 +345,11 @@ Enable detailed logging by modifying debug flags in respective service classes.
 Guidelines for contributors:
 
 1. Follow Swift API Design Guidelines
-2. Maintain comprehensive documentation
-3. Include unit tests for new features
-4. Ensure memory efficiency
-5. Test across device types and network conditions
+2. Maintain comprehensive documentation with Apple-style formatting
+3. Include unit tests for new features, especially message input functionality
+4. Ensure memory efficiency and proper resource cleanup
+5. Test across device types, network conditions, and keyboard scenarios
+6. Use reactive programming patterns with Combine publishers
 
 ## Architecture Benefits
 
@@ -279,6 +358,7 @@ Guidelines for contributors:
 - **Performance**: Memory-efficient patterns prevent common video app issues
 - **Maintainability**: Clean separation of concerns and reactive data flow
 - **User Experience**: Smooth scrolling with intelligent resource management
+- **Reactive Architecture**: Consistent publisher-based event handling throughout
 
 ## License
 
@@ -286,7 +366,14 @@ Guidelines for contributors:
 
 ## Version History
 
-**v1.0**: Initial release
+**v1.1**: Message Input Integration
+- Complete message input system with multi-line support
+- Reaction buttons (heart and share) with haptic feedback
+- Keyboard-aware layout with smooth animations
+- Focus state management with video playback coordination
+- Tap-to-dismiss keyboard functionality
+
+**v1.0**: Initial Release
 - Core video feed functionality
 - Player pool and prefetch management
 - Network-aware optimizations

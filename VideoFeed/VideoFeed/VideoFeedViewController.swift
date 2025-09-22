@@ -16,22 +16,23 @@ import Combine
  while maintaining smooth video playback performance.
  
  ## Key Features
- - Full-screen vertical scrolling video feed
- - Automatic video playback and pausing based on visibility
- - Integrated message input with reaction buttons
- - Keyboard-aware layout adjustments
- - Scroll disabling during text input
- - Loading, error, and empty state handling
- - Background/foreground lifecycle management
- - Memory-efficient video player reuse
+ - Full-screen vertical scrolling video feed with TikTok-style presentation
+ - Automatic video playback and pausing based on visibility and focus states
+ - Integrated message input with reaction buttons (heart and share)
+ - Keyboard-aware layout adjustments that preserve video visibility
+ - Scroll disabling during text input to prevent accidental navigation
+ - Comprehensive state management (loading, error, empty, loaded)
+ - Background/foreground lifecycle management with playback coordination
+ - Memory-efficient video player reuse through table view cell recycling
  
  ## Message Input Integration
- - Text input bar with heart and share reaction buttons
+ - Text input bar with expandable multi-line support
+ - Heart and share reaction buttons in unfocused state
  - Focus-aware UI that disables video scrolling during typing
- - Keyboard-aware layout that keeps input visible
- - Send button that appears when typing
- - Smooth animations between input states
- 
+ - Keyboard-aware layout that keeps input visible above keyboard
+ - Send button that appears dynamically when typing
+ - Smooth animations between input states with spring physics
+ - Tap-to-dismiss functionality for intuitive keyboard management
  ## Usage
  ```swift
  let viewModel = VideoFeedViewModel()
@@ -48,11 +49,11 @@ final class VideoFeedViewController: UIViewController {
     
     // MARK: - Private Properties
     
-    /// Set of Combine cancellables for managing subscriptions
+    /// Set of Combine cancellables for managing reactive subscriptions
     private var cancellables = Set<AnyCancellable>()
-    /// Bottom constraint for the message input view (keyboard-aware)
+    /// Bottom constraint for the message input view (adjusted for keyboard visibility)
     internal var messageInputBottomConstraint: NSLayoutConstraint!
-    /// Original table view bottom constraint (for keyboard adjustments)
+    /// Original table view bottom constraint (maintains relationship with input view)
     private var tableViewBottomConstraint: NSLayoutConstraint!
     
     // MARK: - UI Components
@@ -116,6 +117,7 @@ final class VideoFeedViewController: UIViewController {
      Required initializer for storyboard instantiation.
      
      Creates a default `VideoFeedViewModel` instance when initialized from storyboard.
+     Note that dependency injection is not available through this initializer.
      
      - Parameter coder: The coder to use for initialization.
      */
@@ -126,6 +128,20 @@ final class VideoFeedViewController: UIViewController {
     
     // MARK: - Lifecycle
     
+    /**
+     Configures the view controller after the view loads.
+     
+     ## Setup Process
+     1. Configures UI layout and constraints
+     2. Establishes reactive bindings with view model
+     3. Sets up message input event handling
+     4. Initiates video data loading
+     5. Registers for system notifications
+     6. Configures keyboard dismissal behavior
+     
+     This method coordinates all necessary setup for a fully functional
+     video feed with message input capabilities.
+     */
     override func viewDidLoad() {
         super.viewDidLoad()
         setupUI()
@@ -228,11 +244,16 @@ final class VideoFeedViewController: UIViewController {
     /**
      Establishes reactive bindings between the view model and UI components.
      
-     Sets up Combine subscriptions to:
-     - Update UI based on loading state changes
-     - Reload table view when video items change
-     - Monitor prefetch strategy changes (for debugging/analytics)
-     - Handle network connectivity changes
+     ## Publisher Subscriptions
+     Sets up Combine subscriptions to observe:
+     - Loading state changes for UI mode switching
+     - Video items updates for table view reloading
+     - Prefetch strategy changes for debugging/analytics
+     - Network connectivity changes for error handling
+     - Input focus state for keyboard coordination
+     - Keyboard information for layout adjustments
+     - User feedback messages for temporary display
+     - Share options presentation for sharing workflows
      */
     private func bindViewModel() {
         // Bind loading state
@@ -299,6 +320,15 @@ final class VideoFeedViewController: UIViewController {
             .store(in: &cancellables)
     }
     
+    /**
+     Establishes reactive bindings for message input functionality.
+
+     Connects message input view publishers to appropriate view model methods:
+     - Focus state changes disable/enable table view scrolling
+     - Message sending triggers view model message handling
+     - Heart reactions trigger view model heart handling
+     - Share reactions trigger view model share handling
+     */
     private func bindMessageInput() {
         // Handle focus changes
         messageInputView.focusStatePublisher
@@ -339,9 +369,14 @@ final class VideoFeedViewController: UIViewController {
     /**
      Updates the UI based on the current video feed state.
      
-     - Parameter state: The current state of the video feed (loading, loaded, error, empty).
+     - Parameter state: The current state of the video feed (loading, loaded, error).
      
-     Manages visibility of loading, error, table view, and message input based on the provided state.
+     Manages visibility and configuration of all major UI components based on
+     the current application state:
+     - Loading: Shows loading indicator, hides other components
+     - Loaded: Shows video feed and message input, hides loading/error views
+     - Error: Shows error view with retry functionality, hides other components
+     
      */
     private func updateUI(for state: VideoFeedState) {
         switch state {
@@ -354,6 +389,15 @@ final class VideoFeedViewController: UIViewController {
         }
     }
     
+    /**
+     Controls the visibility of video feed components.
+     
+     - Parameter isShown: Whether the video feed should be visible.
+     
+     ## Component Coordination
+     Manages the visibility state of related UI components to ensure
+     only appropriate views are shown for the current application state.
+     */
     private func showVideoFeed(_ isShown: Bool) {
         loadingView.isHidden = isShown
         tableView.isHidden = !isShown
@@ -361,6 +405,15 @@ final class VideoFeedViewController: UIViewController {
         errorView.isHidden = true
     }
     
+    /**
+     Displays error state UI with appropriate error information.
+     
+     - Parameter error: The specific error to display to the user.
+     
+     ## Error Display
+     Configures the error view with user-friendly messages and appropriate
+     iconography based on the error type, while hiding all other UI components.
+     */
     private func showErrorState(with error: ErrorHandler) {
         loadingView.isHidden = true
         tableView.isHidden = true
@@ -369,14 +422,14 @@ final class VideoFeedViewController: UIViewController {
         errorView.configure(with: error)
     }
     
-    // MARK: - Notification observers for lifecycle and keyboard
+    // MARK: - Notification Setup
     
     /**
      Configures notification observers for app lifecycle events and keyboard changes.
      
-     Monitors for:
+     ## Monitored Events
      - App entering background: Pauses video playback and dismisses keyboard
-     - App entering foreground: Resumes video playback
+     - App entering foreground: Resumes appropriate video playback
      - Keyboard show/hide: Adjusts layout to keep message input visible
      
      Uses Combine publishers for reactive notification handling.
